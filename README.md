@@ -16,6 +16,31 @@ schema versioning, an events viewer), use
 [rails_simple_event_sourcing](https://github.com/dbackowski/rails_simple_event_sourcing).
 This gem is the deliberately stripped-down version.
 
+## How it works
+
+Creating an event is the whole write path. Validation, the change to your model, and
+the audit row all happen in one transaction — if the event is invalid, nothing is
+touched.
+
+```mermaid
+flowchart TD
+    A["CustomerCreated.create(first_name: ...)"] --> B{"Event valid?"}
+    B -- "no" --> C["Nothing written<br/>event.errors is set"]
+    B -- "yes" --> D["Load the model<br/>(find existing or build new)"]
+
+    subgraph TX["one transaction"]
+        direction TB
+        D --> E["apply payload onto the model"]
+        E --> F["save the model row<br/>(= current state)"]
+        F --> G["insert the event row<br/>(immutable audit log)"]
+    end
+
+    G --> H["event.aggregate → the persisted model"]
+```
+
+The model row is the source of truth; the event row is a permanent record of what
+changed. Events are never replayed.
+
 ## How it compares
 
 | | `rails_simple_event_sourcing` | `rails_micro_event_sourcing` |
