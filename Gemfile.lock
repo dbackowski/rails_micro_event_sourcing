@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    rails_micro_event_sourcing (0.1.0)
+    rails_micro_event_sourcing (1.0.0)
       pg (~> 1.1)
       rails (>= 7.1)
 

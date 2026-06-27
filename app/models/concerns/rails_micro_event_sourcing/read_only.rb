@@ -1,11 +1,6 @@
 # frozen_string_literal: true
 
 module RailsMicroEventSourcing
-  # Makes a record writable only while write access is explicitly open.
-  #
-  # Events include this directly, so they are always frozen after creation.
-  # Aggregates get it through the Aggregate concern, but only enforce it once they
-  # call `enforce_events_only!` -- until then they behave like normal records.
   module ReadOnly
     extend ActiveSupport::Concern
 

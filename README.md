@@ -229,7 +229,7 @@ end
 ### Querying the audit log
 
 ```ruby
-customer.events                                  # this aggregate's history, oldest first by id
+customer.events                                  # this aggregate's history, oldest first
 customer.events.last.payload                     # the stored attributes
 RailsMicroEventSourcing::Event.where(type: "Customer::Events::CustomerCreated")
 ```

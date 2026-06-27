@@ -71,6 +71,25 @@ module RailsMicroEventSourcing
       end
     end
 
+    test 'events are returned oldest first regardless of physical row order' do
+      created = create_customer_event
+      aggregate_id = created.aggregate_id
+
+      ordered_ids = 3.times.map do
+        Customer::Events::CustomerUpdated.create!(aggregate_id:, email: 'x@example.com').id
+      end
+      ordered_ids.unshift(created.id)
+
+      # Relocate the oldest rows in the heap so physical order no longer matches
+      # insertion order; the association must still sort them chronologically.
+      ActiveRecord::Base.connection.execute(
+        "UPDATE rails_micro_event_sourcing_events SET metadata = '{}' " \
+        "WHERE id IN (#{ordered_ids.first}, #{ordered_ids.second})"
+      )
+
+      assert_equal ordered_ids, Customer.find(aggregate_id).events.pluck(:id)
+    end
+
     private
 
     def create_customer_event(first_name: 'John', last_name: 'Doe', email: 'john@example.com')
