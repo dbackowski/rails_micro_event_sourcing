@@ -71,6 +71,20 @@ module RailsMicroEventSourcing
       end
     end
 
+    test 'aggregate validation errors are surfaced on the event' do
+      create_customer_event(email: 'taken@example.com')
+
+      event = Customer::Events::CustomerCreated.new(
+        first_name: 'Jane', last_name: 'Roe', email: 'taken@example.com'
+      )
+
+      assert_no_difference ['Customer.count', 'RailsMicroEventSourcing::Event.count'] do
+        assert_not event.save
+      end
+      assert_not event.persisted?
+      assert_includes event.errors[:email], 'has already been taken'
+    end
+
     test 'events are returned oldest first regardless of physical row order' do
       created = create_customer_event
       aggregate_id = created.aggregate_id

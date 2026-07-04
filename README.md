@@ -139,6 +139,12 @@ event.errors      # => standard ActiveModel::Errors when invalid
 - valid → the `Customer` is created/updated **and** the event row is written.
 - invalid → nothing is written; the model is never touched.
 
+Validations usually live on the event, but if the aggregate model has its own
+`ActiveModel` validations they are checked too, and any failures surface in
+`event.errors` — so `event.save` returns `false` rather than blowing up. (A
+database constraint with no matching validation, e.g. a bare unique index, still
+raises `ActiveRecord::RecordNotUnique` exactly as it would in plain Rails.)
+
 In a controller:
 
 ```ruby

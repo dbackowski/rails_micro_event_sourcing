@@ -8,6 +8,7 @@ module RailsMicroEventSourcing
     alias aggregate eventable
 
     before_validation :open_for_writing, on: :create
+    validate :aggregate_must_be_valid, if: :aggregate_class, on: :create
     before_create :capture_metadata
     before_create :apply_to_aggregate, if: :aggregate_class
     after_create :disable_write_access!
@@ -52,17 +53,28 @@ module RailsMicroEventSourcing
       self.metadata ||= CurrentRequest.metadata.presence
     end
 
+    def aggregate_must_be_valid
+      record = build_and_apply
+      errors.merge!(record.errors) unless record.valid?
+    end
+
     def apply_to_aggregate
-      record = find_or_build_aggregate
+      record = build_and_apply(lock: true)
       record.enable_write_access!
-      apply(record)
       record.save!
       record.disable_write_access!
       self.eventable = record
     end
 
-    def find_or_build_aggregate
-      @aggregate_id.present? ? aggregate_class.lock.find(@aggregate_id) : aggregate_class.new
+    def build_and_apply(lock: false)
+      find_or_build_aggregate(lock:).tap { |record| apply(record) }
+    end
+
+    def find_or_build_aggregate(lock: false)
+      return aggregate_class.new if @aggregate_id.blank?
+
+      scope = lock ? aggregate_class.lock : aggregate_class
+      scope.find(@aggregate_id)
     end
   end
 end
