@@ -65,6 +65,22 @@ module RailsMicroEventSourcing
       assert_raises(ActiveRecord::ReadOnlyRecord) { event.update!(metadata: { tampered: true }) }
     end
 
+    test 'the aggregate is built and applied only once per event' do
+      event = Customer::Events::CustomerCreated.new(first_name: 'John', last_name: 'Doe', email: 'john@example.com')
+
+      applies = 0
+      event.define_singleton_method(:apply) do |aggregate|
+        applies += 1
+        super(aggregate)
+      end
+
+      event.save!
+
+      # Validation and the write share one locked read, so apply runs a single
+      # time (it used to run twice, on two separate unlocked/locked reads).
+      assert_equal 1, applies
+    end
+
     test 'an invalid event is not saved and does not create an aggregate' do
       assert_no_difference ['Account.count', 'RailsMicroEventSourcing::Event.count'] do
         assert_raises(ActiveRecord::RecordInvalid) { Account::Events::AccountCreated.create!(name: nil) }

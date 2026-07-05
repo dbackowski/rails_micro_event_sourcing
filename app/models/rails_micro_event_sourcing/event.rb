@@ -54,27 +54,24 @@ module RailsMicroEventSourcing
     end
 
     def aggregate_must_be_valid
-      record = build_and_apply
-      errors.merge!(record.errors) unless record.valid?
+      errors.merge!(aggregate_record.errors) unless aggregate_record.valid?
     end
 
     def apply_to_aggregate
-      record = build_and_apply(lock: true)
-      record.enable_write_access!
-      record.save!
-      record.disable_write_access!
-      self.eventable = record
+      aggregate_record.enable_write_access!
+      aggregate_record.save!
+      aggregate_record.disable_write_access!
+      self.eventable = aggregate_record
     end
 
-    def build_and_apply(lock: false)
-      find_or_build_aggregate(lock:).tap { |record| apply(record) }
+    def aggregate_record
+      @aggregate_record ||= find_or_build_aggregate.tap { |record| apply(record) }
     end
 
-    def find_or_build_aggregate(lock: false)
+    def find_or_build_aggregate
       return aggregate_class.new if @aggregate_id.blank?
 
-      scope = lock ? aggregate_class.lock : aggregate_class
-      scope.find(@aggregate_id)
+      aggregate_class.lock.find(@aggregate_id)
     end
   end
 end
