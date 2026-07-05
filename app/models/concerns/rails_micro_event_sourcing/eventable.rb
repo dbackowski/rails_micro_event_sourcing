@@ -8,7 +8,7 @@ module RailsMicroEventSourcing
     included do
       has_many :events, -> { order(:created_at, :id) },
                class_name: 'RailsMicroEventSourcing::Event',
-               as: :eventable, dependent: :nullify
+               as: :eventable, dependent: :nullify, inverse_of: :eventable
     end
 
     class_methods do
