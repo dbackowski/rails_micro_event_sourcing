@@ -81,6 +81,15 @@ module RailsMicroEventSourcing
       assert_equal 1, applies
     end
 
+    test 'an update for a non-existent aggregate fails gracefully rather than raising' do
+      event = Customer::Events::CustomerUpdated.new(aggregate_id: 0, email: 'new@example.com')
+
+      assert_no_difference 'RailsMicroEventSourcing::Event.count' do
+        assert_not event.save
+      end
+      assert_includes event.errors[:aggregate_id], 'does not reference an existing record'
+    end
+
     test 'an invalid event is not saved and does not create an aggregate' do
       assert_no_difference ['Account.count', 'RailsMicroEventSourcing::Event.count'] do
         assert_raises(ActiveRecord::RecordInvalid) { Account::Events::AccountCreated.create!(name: nil) }

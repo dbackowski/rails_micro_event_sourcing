@@ -55,6 +55,8 @@ module RailsMicroEventSourcing
 
     def aggregate_must_be_valid
       errors.merge!(aggregate_record.errors) unless aggregate_record.valid?
+    rescue ActiveRecord::RecordNotFound
+      errors.add(:aggregate_id, 'does not reference an existing record')
     end
 
     def apply_to_aggregate
