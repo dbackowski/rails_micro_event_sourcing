@@ -8,4 +8,6 @@ gem 'puma'
 
 group :development, :test do
   gem 'debug'
+  gem 'rubocop'
+  gem 'rubocop-rails'
 end

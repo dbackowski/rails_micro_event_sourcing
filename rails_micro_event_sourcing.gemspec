@@ -18,13 +18,12 @@ Gem::Specification.new do |spec|
 
   spec.metadata['homepage_uri'] = spec.homepage
   spec.metadata['source_code_uri'] = 'https://github.com/dbackowski/rails_micro_event_sourcing'
+  spec.metadata['rubygems_mfa_required'] = 'true'
 
   spec.files = Dir.chdir(File.expand_path(__dir__)) do
-    Dir['{app,config,db,lib}/**/*', 'MIT-LICENSE', 'Rakefile', 'README.md']
+    Dir['{app,db,lib}/**/*', 'MIT-LICENSE', 'Rakefile', 'README.md']
   end
 
   spec.add_dependency 'pg', '~> 1.1'
   spec.add_dependency 'rails', '>= 7.1'
-  spec.add_development_dependency 'rubocop'
-  spec.add_development_dependency 'rubocop-rails'
 end
