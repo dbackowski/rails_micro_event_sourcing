@@ -25,6 +25,23 @@ module RailsMicroEventSourcing
           define_method("#{name}=") { |value| self.payload = (payload || {}).merge(key => value) }
         end
       end
+
+      def backfill!(aggregate, payload: nil, created_at: nil, metadata: nil)
+        raise ArgumentError, "#{name} has no aggregate_class" unless aggregate_class
+        return nil if exists?(eventable: aggregate)
+
+        insert!( # rubocop:disable Rails/SkipsModelValidations
+          {
+            type: name,
+            eventable_type: aggregate.class.polymorphic_name,
+            eventable_id: aggregate.id,
+            payload: payload || aggregate.attributes,
+            metadata: metadata,
+            created_at: created_at || aggregate.created_at || Time.current
+          },
+          returning: false
+        )
+      end
     end
 
     attr_writer :aggregate_id

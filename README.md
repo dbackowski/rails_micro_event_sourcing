@@ -240,6 +240,53 @@ customer.events.last.payload                     # the stored attributes
 RailsMicroEventSourcing::Event.where(type: "Customer::Events::CustomerCreated")
 ```
 
+## Backfilling existing records
+
+When you adopt the gem on a table that already has rows, those records have no
+history. You can't magically reconstruct what happened before, but you *can* seed a
+single genesis event per record so the audit log isn't blank — a snapshot of the
+current state, stamped with the row's original `created_at`.
+
+`backfill!` does exactly that. Unlike a normal event, it does **not** replay onto the
+aggregate (the row already holds the correct state), so your records are left
+untouched — no `updated_at` bump, no validations, no lock. It only appends the audit
+row:
+
+```ruby
+Customer.find_each do |customer|
+  Customer::Events::CustomerCreated.backfill!(customer, metadata: { backfilled: true })
+end
+```
+
+Each backfilled event:
+
+- **stores a full snapshot** of the row in `payload` (every column, including
+  `created_at`/`updated_at`), not just the declared `event_attributes` — so the last
+  point in history you can honestly capture is preserved.
+- **backdates the event's `created_at`** to the record's original creation time, so
+  `customer.events` orders it ahead of any real events created after adoption.
+- is **idempotent**: it returns `nil` and writes nothing if the aggregate already has
+  an event of this type — whether a previous backfill or a real creation event. Re-run
+  the task as many times as you like.
+
+Because it's a reconstruction, tag it (`metadata: { backfilled: true }`) so synthetic
+genesis events stay distinguishable from ones your app actually emitted.
+
+You can override the snapshot or timestamp explicitly:
+
+```ruby
+Customer::Events::CustomerCreated.backfill!(
+  customer,
+  payload: { first_name: customer.first_name, email: customer.email }, # custom snapshot
+  created_at: customer.created_at,
+  metadata: { backfilled: true }
+)
+```
+
+`backfill!` requires an event class with an `aggregate_class` (it raises `ArgumentError`
+otherwise) — aggregate-less events record facts, not records, so there's nothing to
+seed.
+
 ## Removing the gem
 
 Because state lives in your own columns, removal is clean: drop the `include`, delete
