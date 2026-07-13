@@ -24,6 +24,11 @@ module RailsMicroEventSourcing
           define_method(name) { (payload || {})[key] }
           define_method("#{name}=") { |value| self.payload = (payload || {}).merge(key => value) }
         end
+        event_attribute_names.concat(names.map(&:to_s))
+      end
+
+      def event_attribute_names
+        @event_attribute_names ||= []
       end
 
       def backfill!(aggregate, payload: nil, created_at: nil, metadata: nil)
@@ -51,8 +56,17 @@ module RailsMicroEventSourcing
     end
 
     def apply(aggregate)
-      (payload || {}).each do |key, value|
-        aggregate.public_send("#{key}=", value) if aggregate.respond_to?("#{key}=")
+      self.class.event_attribute_names.each do |key|
+        next unless payload&.key?(key)
+
+        unless aggregate.respond_to?("#{key}=")
+          raise ArgumentError,
+                "#{self.class} declares `event_attributes :#{key}` but its aggregate " \
+                "#{aggregate.class} has no ##{key}= setter — check the attribute name " \
+                'matches a column.'
+        end
+
+        aggregate.public_send("#{key}=", payload[key])
       end
     end
 

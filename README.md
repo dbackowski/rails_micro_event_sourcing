@@ -113,15 +113,25 @@ class Customer
 end
 ```
 
-By default every `event_attributes` value is copied onto the aggregate. Override
-`apply(aggregate)` only when you need computed values or custom transformations:
+Every `event_attributes` value is copied onto the aggregate, so each name **must**
+match a setter on the aggregate. If it doesn't, applying the event raises
+`ArgumentError` (naming the offending attribute) instead of silently dropping the
+value — a mistyped or renamed attribute fails loudly rather than writing a blank column.
+
+Override `apply(aggregate)` when you need to normalize or derive a value. Call `super`
+to copy the rest:
 
 ```ruby
+event_attributes :first_name, :last_name, :email
+
 def apply(aggregate)
-  aggregate.full_name = "#{first_name} #{last_name}"
-  super # still copies the remaining attributes
+  super
+  aggregate.email = aggregate.email.strip.downcase
 end
 ```
+
+(Data that isn't part of the aggregate — request context, an audit flag — belongs in
+[`metadata`](#metadata), not in `event_attributes`.)
 
 ### 3. Create it
 
