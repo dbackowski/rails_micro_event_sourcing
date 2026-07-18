@@ -52,7 +52,7 @@ module RailsMicroEventSourcing
     attr_writer :aggregate_id
 
     def aggregate_id
-      eventable_id || @aggregate_id
+      eventable_id || (@aggregate_id if aggregate_class)
     end
 
     def apply(aggregate)

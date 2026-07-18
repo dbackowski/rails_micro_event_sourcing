@@ -18,5 +18,12 @@ module RailsMicroEventSourcing
         Customer::Events::CustomerLoginFailed.create!(email: 'john@example.com')
       end
     end
+
+    test 'a stray aggregate_id is not echoed back, since it is never linked to anything' do
+      event = Customer::Events::CustomerLoginFailed.create!(email: 'john@example.com', aggregate_id: 999)
+
+      assert_nil event.aggregate
+      assert_nil event.aggregate_id
+    end
   end
 end
