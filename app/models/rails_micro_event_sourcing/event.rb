@@ -15,7 +15,10 @@ module RailsMicroEventSourcing
 
     class << self
       def aggregate_class(klass = nil)
-        klass ? @aggregate_class = klass : @aggregate_class
+        return @aggregate_class = klass if klass
+        return @aggregate_class if defined?(@aggregate_class) && @aggregate_class
+
+        superclass.respond_to?(:aggregate_class) ? superclass.aggregate_class : nil
       end
 
       def event_attributes(*names)
@@ -24,11 +27,12 @@ module RailsMicroEventSourcing
           define_method(name) { (payload || {})[key] }
           define_method("#{name}=") { |value| self.payload = (payload || {}).merge(key => value) }
         end
-        event_attribute_names.concat(names.map(&:to_s))
+        own_event_attribute_names.concat(names.map(&:to_s))
       end
 
       def event_attribute_names
-        @event_attribute_names ||= []
+        inherited = superclass.respond_to?(:event_attribute_names) ? superclass.event_attribute_names : []
+        (inherited + own_event_attribute_names).uniq
       end
 
       def backfill!(aggregate, payload: nil, created_at: nil, metadata: nil)
@@ -46,6 +50,12 @@ module RailsMicroEventSourcing
           },
           returning: false
         )
+      end
+
+      private
+
+      def own_event_attribute_names
+        @own_event_attribute_names ||= []
       end
     end
 
