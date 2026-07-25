@@ -36,7 +36,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_06_05_000000) do
     t.jsonb "payload", default: {}, null: false
     t.jsonb "metadata"
     t.datetime "created_at", null: false
-    t.index ["eventable_type", "eventable_id"], name: "index_rails_micro_event_sourcing_events_on_eventable"
+    t.index ["eventable_type", "eventable_id", "created_at", "id"], name: "index_rmes_events_on_eventable_and_created_at"
     t.index ["type"], name: "index_rails_micro_event_sourcing_events_on_type"
   end
 
