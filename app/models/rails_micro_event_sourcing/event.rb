@@ -8,6 +8,7 @@ module RailsMicroEventSourcing
     alias aggregate eventable
 
     before_validation :open_for_writing, on: :create
+    before_validation :reset_aggregate_record, on: :create
     validate :aggregate_must_be_valid, if: :aggregate_class, on: :create
     before_create :capture_metadata
     before_create :apply_to_aggregate, if: :aggregate_class
@@ -105,6 +106,10 @@ module RailsMicroEventSourcing
       aggregate_record.save!
       aggregate_record.disable_write_access!
       self.eventable = aggregate_record
+    end
+
+    def reset_aggregate_record
+      @aggregate_record = nil
     end
 
     def aggregate_record
