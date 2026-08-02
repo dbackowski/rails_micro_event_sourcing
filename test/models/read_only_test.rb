@@ -28,5 +28,46 @@ module RailsMicroEventSourcing
 
       assert_equal 'Globex', Account.find(created.aggregate_id).name
     end
+
+    # The policy is declared on a class but read through subclasses: an STI child, or
+    # a concrete model under a shared abstract base. If it does not carry down, the
+    # guard silently fails open and writes land with no event recorded.
+    class PremiumAccount < Account; end
+
+    test 'enforce_events_only! is inherited by a subclass' do
+      assert PremiumAccount.enforce_events_only?
+    end
+
+    test 'a subclass of an enforce_events_only! model cannot be modified directly' do
+      created = Account::Events::AccountCreated.create!(name: 'Acme')
+
+      assert_raises(ActiveRecord::ReadOnlyRecord) do
+        PremiumAccount.find(created.aggregate_id).update!(name: 'Globex')
+      end
+    end
+
+    test 'a subclass of an enforce_events_only! model can still be modified through an event' do
+      created = Account::Events::AccountCreated.create!(name: 'Acme')
+
+      Account::Events::AccountRenamed.create!(aggregate_id: created.aggregate_id, name: 'Globex')
+
+      assert_equal 'Globex', PremiumAccount.find(created.aggregate_id).name
+    end
+
+    test 'enforce_events_only! declared on an abstract base carries down to concrete models' do
+      assert Ledger.enforce_events_only?
+    end
+
+    test 'a model inheriting the policy from an abstract base cannot be modified directly' do
+      created = Account::Events::AccountCreated.create!(name: 'Acme')
+
+      assert_raises(ActiveRecord::ReadOnlyRecord) do
+        Ledger.find(created.aggregate_id).update!(name: 'Globex')
+      end
+    end
+
+    test 'declaring the policy on a subclass does not leak up to its parent' do
+      assert_not Customer.enforce_events_only?
+    end
   end
 end

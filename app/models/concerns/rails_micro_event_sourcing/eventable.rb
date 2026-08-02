@@ -6,6 +6,8 @@ module RailsMicroEventSourcing
     include ReadOnly
 
     included do
+      class_attribute :enforce_events_only, instance_accessor: false, default: false
+
       has_many :events, -> { order(:created_at, :id) },
                class_name: 'RailsMicroEventSourcing::Event',
                as: :eventable, dependent: :nullify, inverse_of: :eventable
@@ -13,11 +15,7 @@ module RailsMicroEventSourcing
 
     class_methods do
       def enforce_events_only!
-        @enforce_events_only = true
-      end
-
-      def enforce_events_only?
-        @enforce_events_only == true
+        self.enforce_events_only = true
       end
     end
   end
