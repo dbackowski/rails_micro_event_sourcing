@@ -15,6 +15,11 @@ Style/Documentation:
 Metrics/MethodLength:
   Max: 15
 
+# Event is deliberately the centre of gravity of this gem — "the event is the
+# model" — so it carries the whole write path rather than spreading it thin.
+Metrics/ClassLength:
+  Max: 120
+
 Metrics/BlockLength:
   Exclude:
     - '*.gemspec'

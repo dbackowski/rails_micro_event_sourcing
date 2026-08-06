@@ -102,10 +102,20 @@ module RailsMicroEventSourcing
     end
 
     def apply_to_aggregate
+      ensure_aggregate_is_eventable!
       aggregate_record.enable_write_access!
       aggregate_record.save!
       aggregate_record.disable_write_access!
       self.eventable = aggregate_record
+    end
+
+    def ensure_aggregate_is_eventable!
+      return if aggregate_class.include?(Eventable)
+
+      raise ArgumentError,
+            "#{self.class} declares `aggregate_class #{aggregate_class}` but " \
+            "#{aggregate_class} does not include RailsMicroEventSourcing::Eventable — " \
+            'add the include so the aggregate gets its `events` association and write guard.'
     end
 
     def reset_aggregate_record
