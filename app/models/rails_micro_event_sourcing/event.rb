@@ -25,8 +25,8 @@ module RailsMicroEventSourcing
       def event_attributes(*names)
         names.each do |name|
           key = name.to_s
-          define_method(name) { (payload || {})[key] }
-          define_method("#{name}=") { |value| self.payload = (payload || {}).merge(key => value) }
+          define_method(name) { (self[:payload] || {})[key] }
+          define_method("#{name}=") { |value| self[:payload] = (self[:payload] || {}).merge(key => value) }
         end
         own_event_attribute_names.concat(names.map(&:to_s))
       end
@@ -63,12 +63,12 @@ module RailsMicroEventSourcing
     attr_writer :aggregate_id
 
     def aggregate_id
-      eventable_id || (@aggregate_id if aggregate_class)
+      self[:eventable_id] || (@aggregate_id if aggregate_class)
     end
 
     def apply(aggregate)
       self.class.event_attribute_names.each do |key|
-        next unless payload&.key?(key)
+        next unless self[:payload]&.key?(key)
 
         unless aggregate.respond_to?("#{key}=")
           raise ArgumentError,
@@ -77,7 +77,7 @@ module RailsMicroEventSourcing
                 'matches a column.'
         end
 
-        aggregate.public_send("#{key}=", payload[key])
+        aggregate.public_send("#{key}=", self[:payload][key])
       end
     end
 
@@ -92,7 +92,7 @@ module RailsMicroEventSourcing
     end
 
     def capture_metadata
-      self.metadata ||= CurrentRequest.metadata.presence
+      self[:metadata] ||= CurrentRequest.metadata.presence
     end
 
     def aggregate_must_be_valid
