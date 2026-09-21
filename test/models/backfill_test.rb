@@ -68,5 +68,30 @@ module RailsMicroEventSourcing
         Customer::Events::CustomerLoginFailed.backfill!(@customer)
       end
     end
+
+    # An unsaved record has no id, so the audit row would be written detached
+    # (eventable_id NULL) — indistinguishable from one orphaned by a deleted
+    # aggregate. Worse, the idempotency check then matches that NULL row and
+    # silently skips the backfill of every *other* unsaved record.
+    test 'backfill raises for an aggregate that is not persisted' do
+      assert_no_difference 'RailsMicroEventSourcing::Event.count' do
+        assert_raises(ArgumentError) do
+          Customer::Events::CustomerCreated.backfill!(Customer.new(email: 'new@example.com'))
+        end
+      end
+    end
+
+    # Backfill seeds a genesis snapshot so the log is not blank. Scoping the
+    # check to this event's own type let a second, differently-typed backfill
+    # insert another backdated snapshot that sorts ahead of real history.
+    test 'backfill is skipped when the aggregate has an event of any other type' do
+      created = Customer::Events::CustomerCreated.create!(
+        first_name: 'Jane', last_name: 'Roe', email: 'jane@example.com'
+      )
+
+      assert_no_difference 'RailsMicroEventSourcing::Event.count' do
+        assert_nil Customer::Events::CustomerUpdated.backfill!(created.aggregate)
+      end
+    end
   end
 end

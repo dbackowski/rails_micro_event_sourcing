@@ -96,6 +96,34 @@ class Customer < ApplicationRecord
 end
 ```
 
+#### What the guard does and doesn't cover
+
+`enforce_events_only!` works through `readonly?`, which Rails consults when saving or
+destroying a *record*. So the line is instantiated vs. not:
+
+| Raises `ReadOnlyRecord` | Goes through untouched |
+|---|---|
+| `create` / `create!` | `Customer.where(…).update_all` |
+| `update` / `update!` | `Customer.insert_all` / `upsert_all` |
+| `update_attribute` / `update_columns` | `Customer.where(…).delete_all` |
+| `touch` | `customer.delete` |
+| `destroy` / `destroy!` / `destroy_all` | raw SQL |
+
+Every path ordinary app code takes by accident is stopped. Relation-level SQL never
+builds a record, so `readonly?` is never consulted — a data migration doing
+`Customer.where(…).update_all(…)` rewrites state with no event and no error. Treat this
+as a guard against accidental writes, not as a security boundary.
+
+The events table *can* have a real database-level guarantee, because it is insert-only
+by design. One grant, no trigger:
+
+```sql
+REVOKE UPDATE, DELETE ON rails_micro_event_sourcing_events FROM your_app_role;
+```
+
+Your own tables get no equivalent — the gem itself has to `UPDATE` them when applying
+an event.
+
 ### 2. Write an event
 
 One class is the whole vertical slice — what changes, the rules, and the data:
@@ -242,12 +270,47 @@ class ApplicationController < ActionController::Base
 end
 ```
 
+You can also set `metadata` per event. It is taken as-is and `CurrentRequest` is *not*
+consulted — it replaces the request context rather than adding to it, so merge yourself
+if you want both:
+
+```ruby
+Customer::Events::CustomerCreated.create!(
+  **attrs, metadata: { reason: "csv import" }
+)                                       # => { "reason" => "csv import" }
+
+Customer::Events::CustomerCreated.create!(
+  **attrs, metadata: RailsMicroEventSourcing::CurrentRequest.metadata.merge(reason: "csv import")
+)                                       # => { "request_id" => "…", "reason" => "csv import" }
+```
+
 ### Querying the audit log
 
 ```ruby
 customer.events                                  # this aggregate's history, oldest first
 customer.events.last.payload                     # the stored attributes
 RailsMicroEventSourcing::Event.where(type: "Customer::Events::CustomerCreated")
+```
+
+Both of those are indexed — the migration ships an index on `type` and a composite on
+`(eventable_type, eventable_id, created_at, id)`. Two common queries are not, and stay
+sequential scans as the log grows:
+
+```ruby
+# searching inside the payload
+RailsMicroEventSourcing::Event.where("payload @> ?", { email: "jane@example.com" }.to_json)
+
+# a time range across all aggregates (created_at is not a leading index column)
+RailsMicroEventSourcing::Event.where(created_at: 1.day.ago..)
+```
+
+Neither index ships by default, because both cost write throughput on every event and
+most apps only ever read an aggregate's own history. Add them in your own migration if
+you actually run those queries:
+
+```ruby
+add_index :rails_micro_event_sourcing_events, :payload, using: :gin
+add_index :rails_micro_event_sourcing_events, :created_at
 ```
 
 ## Backfilling existing records
@@ -276,8 +339,9 @@ Each backfilled event:
 - **backdates the event's `created_at`** to the record's original creation time, so
   `customer.events` orders it ahead of any real events created after adoption.
 - is **idempotent**: it returns `nil` and writes nothing if the aggregate already has
-  an event of this type — whether a previous backfill or a real creation event. Re-run
-  the task as many times as you like.
+  *any* event — a previous backfill, a real creation event, anything. The point is to
+  seed a genesis row for a blank history, so a non-blank one is left alone. Re-run the
+  task as many times as you like.
 
 Because it's a reconstruction, tag it (`metadata: { backfilled: true }`) so synthetic
 genesis events stay distinguishable from ones your app actually emitted.
@@ -293,9 +357,9 @@ Customer::Events::CustomerCreated.backfill!(
 )
 ```
 
-`backfill!` requires an event class with an `aggregate_class` (it raises `ArgumentError`
-otherwise) — aggregate-less events record facts, not records, so there's nothing to
-seed.
+`backfill!` raises `ArgumentError` on an event class with no `aggregate_class`
+(aggregate-less events record facts, not records, so there's nothing to seed), and on
+an aggregate that isn't persisted yet (it has no id to attach the audit row to).
 
 ## Removing the gem
 

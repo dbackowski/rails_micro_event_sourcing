@@ -2,17 +2,13 @@
 
 module RailsMicroEventSourcing
   class Event < ApplicationRecord
-    include ReadOnly
-
     belongs_to :eventable, polymorphic: true, optional: true
     alias aggregate eventable
 
-    before_validation :open_for_writing, on: :create
     before_validation :reset_aggregate_record, on: :create
     validate :aggregate_must_be_valid, if: :aggregate_class, on: :create
     before_create :capture_metadata
     before_create :apply_to_aggregate, if: :aggregate_class
-    after_create :disable_write_access!
 
     class << self
       def aggregate_class(klass = nil)
@@ -38,7 +34,8 @@ module RailsMicroEventSourcing
 
       def backfill!(aggregate, payload: nil, created_at: nil, metadata: nil)
         raise ArgumentError, "#{name} has no aggregate_class" unless aggregate_class
-        return nil if exists?(eventable: aggregate)
+        raise ArgumentError, "#{aggregate.class} must be persisted to be backfilled" unless aggregate.persisted?
+        return nil if Event.exists?(eventable: aggregate)
 
         insert!( # rubocop:disable Rails/SkipsModelValidations
           {
@@ -66,6 +63,13 @@ module RailsMicroEventSourcing
       self[:eventable_id] || (@aggregate_id if aggregate_class)
     end
 
+    # The log is append-only: an event is writable while being created and
+    # immutable the moment it lands. Deriving that from `persisted?` keeps it
+    # true on paths that skip validation, e.g. `save(validate: false)`.
+    def readonly?
+      super || persisted?
+    end
+
     def apply(aggregate)
       self.class.event_attribute_names.each do |key|
         next unless self[:payload]&.key?(key)
@@ -85,10 +89,6 @@ module RailsMicroEventSourcing
 
     def aggregate_class
       self.class.aggregate_class
-    end
-
-    def open_for_writing
-      enable_write_access!
     end
 
     def capture_metadata

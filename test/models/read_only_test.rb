@@ -69,5 +69,22 @@ module RailsMicroEventSourcing
     test 'declaring the policy on a subclass does not leak up to its parent' do
       assert_not Customer.enforce_events_only?
     end
+
+    # The event's own write guard used to be opened by a before_validation hook,
+    # so skipping validation left the event locked and the create failed with a
+    # misleading ReadOnlyRecord instead of writing.
+    test 'an event can be created with validations skipped' do
+      event = Customer::Events::CustomerCreated.new(first_name: 'John', last_name: 'Doe', email: 'john@example.com')
+
+      assert event.save(validate: false)
+      assert_equal 'john@example.com', event.aggregate.email
+    end
+
+    test 'an event is immutable once persisted, however it was written' do
+      event = Customer::Events::CustomerCreated.new(first_name: 'John', last_name: 'Doe', email: 'john@example.com')
+      event.save(validate: false)
+
+      assert_raises(ActiveRecord::ReadOnlyRecord) { event.update!(metadata: { tampered: true }) }
+    end
   end
 end
