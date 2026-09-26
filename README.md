@@ -114,11 +114,14 @@ builds a record, so `readonly?` is never consulted — a data migration doing
 `Customer.where(…).update_all(…)` rewrites state with no event and no error. Treat this
 as a guard against accidental writes, not as a security boundary.
 
-The events table *can* have a real database-level guarantee, because it is insert-only
-by design. One grant, no trigger:
+The gem doesn't try to close the rest, and deliberately so: chasing every way Ruby can
+reach a table means fighting ActiveRecord, and it still wouldn't stop a `psql` session.
+If you want a real guarantee, the database already has one. The events table is
+insert-only by design, so a grant says exactly that — no trigger, no gem code:
 
 ```sql
-REVOKE UPDATE, DELETE ON rails_micro_event_sourcing_events FROM your_app_role;
+GRANT INSERT, SELECT ON rails_micro_event_sourcing_events TO your_app_role;
+-- no UPDATE, no DELETE: the audit log is append-only at the database level
 ```
 
 Your own tables get no equivalent — the gem itself has to `UPDATE` them when applying
