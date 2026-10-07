@@ -57,10 +57,21 @@ module RailsMicroEventSourcing
       end
     end
 
-    attr_writer :aggregate_id
+    # An aggregate-less event has nothing to resolve an id against, so a value
+    # here would be dropped silently. Raise at assignment, where the caller's
+    # intent is still visible, and point at what they almost certainly meant.
+    def aggregate_id=(value)
+      if value.present? && !aggregate_class
+        raise ArgumentError,
+              "#{self.class} has no aggregate_class, so aggregate_id would be dropped — " \
+              'pass eventable: record to link the event without changing it.'
+      end
+
+      @aggregate_id = value
+    end
 
     def aggregate_id
-      self[:eventable_id] || (@aggregate_id if aggregate_class)
+      self[:eventable_id] || @aggregate_id
     end
 
     # The log is append-only: an event is writable while being created and

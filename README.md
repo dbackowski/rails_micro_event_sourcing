@@ -238,6 +238,21 @@ end
 Customer::Events::CustomerLoginFailed.create!(email: "jane@example.com")
 ```
 
+To attach it to a record's history without changing the record, pass `eventable:`:
+
+```ruby
+Customer::Events::CustomerLoginFailed.create!(eventable: customer, email: customer.email)
+
+customer.events  # => [..., #<Customer::Events::CustomerLoginFailed>]
+```
+
+Pass a *persisted* record. An unsaved one is autosaved by `belongs_to`, so the record
+gets created with this fact as its first event and no creation event (on an
+`enforce_events_only!` model that raises `ReadOnlyRecord` instead).
+
+`aggregate_id:` doesn't work here — with no `aggregate_class` there's nothing to resolve
+the id against, so it raises `ArgumentError` rather than silently dropping the link.
+
 ### Side effects
 
 Keep validations and `apply` pure. Put side effects (emails, webhooks, external APIs)
@@ -286,6 +301,16 @@ Customer::Events::CustomerCreated.create!(
   **attrs, metadata: RailsMicroEventSourcing::CurrentRequest.metadata.merge(reason: "csv import")
 )                                       # => { "request_id" => "…", "reason" => "csv import" }
 ```
+
+`nil` is not the same as `{}` here. Passing `nil` (or nothing) falls back to
+`CurrentRequest`; passing `{}` stores an empty hash and opts the event out of the request
+context entirely — useful for a background job you don't want stamped with whatever
+request happens to be in flight. An unset `CurrentRequest` stores `NULL`, so a `{}` in
+the column means "explicitly nothing" and `NULL` means "nothing was set".
+
+Don't declare `event_attributes :metadata`. It defines a `metadata` reader on the event
+that returns the *payload* value, while the column keeps being stamped as usual — two
+live values, no error. Same for any other column name (`payload`, `type`, `created_at`).
 
 ### Querying the audit log
 
@@ -347,7 +372,9 @@ Each backfilled event:
   task as many times as you like.
 
 Because it's a reconstruction, tag it (`metadata: { backfilled: true }`) so synthetic
-genesis events stay distinguishable from ones your app actually emitted.
+genesis events stay distinguishable from ones your app actually emitted. You have to
+pass metadata by hand here: `backfill!` inserts the row directly and skips callbacks, so
+unlike a normal event it never picks up `CurrentRequest.metadata`.
 
 You can override the snapshot or timestamp explicitly:
 

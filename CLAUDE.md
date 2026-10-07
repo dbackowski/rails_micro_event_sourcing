@@ -78,7 +78,11 @@ so concurrent writers to one aggregate serialize.
 - **`apply` raises `ArgumentError` on a missing setter** rather than dropping the value.
   Keep it loud — a renamed column must fail, not blank a field.
 - **`aggregate_id` is virtual, not a column.** As input it names the record to load; as
-  output it mirrors `eventable_id`.
+  output it mirrors `eventable_id`. On an aggregate-less event the writer raises
+  `ArgumentError` for any present value — there's no class to resolve it against, and
+  dropping it silently loses the caller's intended link. Linking a fact without
+  changing the record is `eventable:`. See
+  [no_aggregate_event_test.rb](test/models/no_aggregate_event_test.rb).
 - **`backfill!` does not apply onto the aggregate** — it only inserts a backdated audit
   row (full-attribute snapshot, `created_at` from the record), and returns `nil` if the
   aggregate already has *any* event. Idempotent by design. The guard is on the base
