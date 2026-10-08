@@ -18,13 +18,15 @@ Tests need PostgreSQL on port 5435 (see [docker-compose.yml](docker-compose.yml)
 
 ```bash
 docker compose up -d postgres
-bin/rails db:prepare          # runs against test/dummy
+bundle exec rake app:db:prepare   # runs against test/dummy (engine tasks are app:-prefixed)
 bundle exec rake test         # all tests
 bundle exec ruby -Itest test/models/event_test.rb   # one file
 bundle exec rubocop
 ```
 
-`bin/rails` is the engine's Rails CLI; it boots `test/dummy` as the host app.
+`bin/rails` is the engine's Rails CLI; it boots `test/dummy` as the host app. It has no
+`db:` commands (`bin/rails db:prepare` is "Unrecognized command") — database tasks are
+the `rake app:db:*` ones, as above and in [CI](.github/workflows/ci.yml).
 
 ## Layout
 

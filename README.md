@@ -1,5 +1,7 @@
 # RailsMicroEventSourcing
 
+[![CI](https://github.com/dbackowski/rails_micro_event_sourcing/actions/workflows/ci.yml/badge.svg)](https://github.com/dbackowski/rails_micro_event_sourcing/actions/workflows/ci.yml)
+
 The smallest event sourcing you can get away with in Rails: **the event _is_ the model.**
 
 You write one ActiveRecord class per event. It declares which model it changes

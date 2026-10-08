@@ -1,0 +1,33 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15.3-alpine # same as docker-compose.yml
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5435:5432"] # test/dummy/config/database.yml expects 5435
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      RAILS_ENV: test
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2" # the gemspec floor
+          bundler-cache: true
+      - run: bundle exec rake app:db:prepare # engine tasks are namespaced app:
+      - run: bundle exec rake test
+      - run: bundle exec rubocop
