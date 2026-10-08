@@ -115,7 +115,10 @@ module RailsMicroEventSourcing
     def apply_to_aggregate
       ensure_aggregate_is_eventable!
       aggregate_record.enable_write_access!
-      aggregate_record.save!
+      # aggregate_must_be_valid already validated this exact object, in this
+      # transaction, under this lock — validating again only re-runs the
+      # aggregate's validation callbacks, which need not be idempotent.
+      aggregate_record.save!(validate: false)
       aggregate_record.disable_write_access!
       self.eventable = aggregate_record
     end
@@ -137,7 +140,18 @@ module RailsMicroEventSourcing
       @aggregate_record ||= find_or_build_aggregate.tap { |record| apply(record) }
     end
 
+    # The lookup reads only aggregate_id, and apply_to_aggregate overwrites
+    # eventable afterwards — so an eventable set by the caller (eventable:,
+    # or building through `events`) would be silently replaced by a freshly
+    # built record. Every such path sets eventable_type before save; the
+    # documented aggregate_id path never does.
     def find_or_build_aggregate
+      if self[:eventable_type].present?
+        raise ArgumentError,
+              "#{self.class} finds its #{aggregate_class} by aggregate_id: — " \
+              'eventable: and building through `events` are for aggregate-less events.'
+      end
+
       return aggregate_class.new if @aggregate_id.blank?
 
       aggregate_class.lock.find(@aggregate_id)

@@ -51,7 +51,8 @@ service objects.
 2. `validate :aggregate_must_be_valid` — build/load the aggregate, `apply` the payload,
    run its validations; failures are merged into `event.errors`.
 3. `before_create :capture_metadata` — copies `CurrentRequest.metadata` if unset.
-4. `before_create :apply_to_aggregate` — saves the aggregate, links `eventable`.
+4. `before_create :apply_to_aggregate` — saves the aggregate with `validate: false`
+   (step 2 already validated this exact object), links `eventable`.
 
 The event's own immutability is not a callback: `Event#readonly?` is `super ||
 persisted?`, so it is writable while being created and locked the instant it lands —
@@ -66,6 +67,14 @@ so concurrent writers to one aggregate serialize.
   must clear it on every validation pass, or a payload edited after a failed `save` or
   an explicit `valid?` never reaches the model. Covered by
   [event_revalidation_test.rb](test/models/event_revalidation_test.rb).
+- **The aggregate is validated exactly once per write.** `apply_to_aggregate` saves with
+  `validate: false` because `aggregate_must_be_valid` already checked the same object.
+  A plain `save!` re-runs every aggregate validation callback: query-backed validations
+  double, and a non-idempotent `before_validation` corrupts data (`"Doe"` stored as
+  `"Doe**"` where a direct save gives `"Doe*"`). Don't instead drop the validate-phase
+  check — `save!` raising inside `before_create` would make `event.save` raise rather
+  than return `false` with `event.errors`. Covered in
+  [event_test.rb](test/models/event_test.rb).
 - **`event_attributes` defines methods on the event class**, so a declared name matching
   a real column (`metadata`, `payload`, `type`, `created_at`) shadows that column's
   accessor. Internals must use `self[:payload]` / `read_attribute` — never the public
@@ -83,6 +92,14 @@ so concurrent writers to one aggregate serialize.
   dropping it silently loses the caller's intended link. Linking a fact without
   changing the record is `eventable:`. See
   [no_aggregate_event_test.rb](test/models/no_aggregate_event_test.rb).
+- **The aggregate lookup reads only `aggregate_id`, so a caller-set `eventable` must be
+  rejected, not ignored.** `find_or_build_aggregate` raises when `eventable_type` is
+  already present on an aggregate-backed event. Without that, `eventable:` or building
+  through `events` saw no `aggregate_id`, built a brand-new record, applied the update
+  to it, and `apply_to_aggregate` overwrote `eventable` to point there — the intended
+  record untouched, nothing raised. The mirror of the `aggregate_id` rule above:
+  aggregate events take `aggregate_id:`, facts take `eventable:`. See
+  [aggregate_lookup_test.rb](test/models/aggregate_lookup_test.rb).
 - **`backfill!` does not apply onto the aggregate** — it only inserts a backdated audit
   row (full-attribute snapshot, `created_at` from the record), and returns `nil` if the
   aggregate already has *any* event. Idempotent by design. The guard is on the base

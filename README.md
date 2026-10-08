@@ -221,6 +221,13 @@ Customer::Events::CustomerUpdated.create!(aggregate_id: customer.id, email: "new
 `aggregate_id` is virtual sugar — it is not a column. As input it names the record to
 load; as output `event.aggregate_id` mirrors the linked id.
 
+`aggregate_id:` is the *only* way to target a record with an event that has an
+`aggregate_class`. Passing `eventable:` or building through the association
+(`customer.events.create!(type: …)`) raises `ArgumentError` — those are for
+[events without an aggregate](#events-without-an-aggregate). The rule in one line:
+**events that change a record take `aggregate_id:`; facts about a record take
+`eventable:`.**
+
 ### Events without an aggregate
 
 Omit `aggregate_class` to record a fact that doesn't change any model (audit entry,

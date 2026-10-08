@@ -81,6 +81,27 @@ module RailsMicroEventSourcing
       assert_equal 1, applies
     end
 
+    test 'the aggregate is validated only once per event' do
+      event = Customer::Events::CustomerCreated.new(first_name: 'John', last_name: 'Doe', email: 'john@example.com')
+
+      validations = 0
+      event.define_singleton_method(:apply) do |aggregate|
+        aggregate.define_singleton_method(:valid?) do |*args|
+          validations += 1
+          super(*args)
+        end
+        super(aggregate)
+      end
+
+      event.save!
+
+      # The write saves the object validation already checked, so a second pass
+      # only re-runs the aggregate's validation callbacks — doubling query-backed
+      # validations and corrupting non-idempotent before_validation hooks
+      # ("Doe" stored as "Doe**" where a direct save gives "Doe*").
+      assert_equal 1, validations
+    end
+
     test 'an update for a non-existent aggregate fails gracefully rather than raising' do
       event = Customer::Events::CustomerUpdated.new(aggregate_id: 0, email: 'new@example.com')
 
