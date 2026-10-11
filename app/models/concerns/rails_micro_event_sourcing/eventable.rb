@@ -8,9 +8,12 @@ module RailsMicroEventSourcing
     included do
       class_attribute :enforce_events_only, instance_accessor: false, default: false
 
-      has_many :events, -> { order(:created_at, :id) },
+      # No `dependent:` on purpose. The log is append-only, so destroying an
+      # aggregate must not touch its events: they keep the id they were written
+      # with, and the events table can be granted INSERT/SELECT only.
+      has_many :events, -> { order(:created_at, :id) }, # rubocop:disable Rails/HasManyOrHasOneDependent
                class_name: 'RailsMicroEventSourcing::Event',
-               as: :eventable, dependent: :nullify, inverse_of: :eventable
+               as: :eventable, inverse_of: :eventable
     end
 
     class_methods do

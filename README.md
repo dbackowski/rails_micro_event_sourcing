@@ -404,8 +404,54 @@ an aggregate that isn't persisted yet (it has no id to attach the audit row to).
 
 Because state lives in your own columns, removal is clean: drop the `include`, delete
 your event classes, and drop the events table. Your model keeps working as plain
-ActiveRecord. The `events` association uses `dependent: :nullify`, so deleting an
-aggregate leaves its (now detached) audit rows intact rather than blocking the delete.
+ActiveRecord.
+
+## Deleting an aggregate
+
+A deletion is a fact worth recording, so the recommended way to remove a record is an
+event that marks it deleted. It needs no special support — it is an ordinary update
+event carrying a timestamp column you add to your table:
+
+```ruby
+class Customer
+  module Events
+    class CustomerDeleted < RailsMicroEventSourcing::Event
+      aggregate_class Customer
+      event_attributes :deleted_at
+    end
+  end
+end
+
+Customer::Events::CustomerDeleted.create!(aggregate_id: customer.id, deleted_at: Time.current)
+```
+
+The row stays, its history stays linked, and the deletion itself is in the log with its
+[metadata](#metadata) — who did it and when. Hiding deleted rows from queries is up to
+you (a scope such as `where(deleted_at: nil)`).
+
+On an `enforce_events_only!` model this is the *only* route: `destroy` raises
+`ActiveRecord::ReadOnlyRecord` like any other direct write. `customer.delete` still
+goes through, as the [guard table](#what-the-guard-does-and-doesnt-cover) shows, but
+it leaves no event behind.
+
+### Hard deletes
+
+On a model without `enforce_events_only!`, `destroy` works as in plain Rails, and it
+never touches the record's events. The `events` association has no `dependent:`
+option, so the audit rows stay exactly as written and keep the `eventable_type` /
+`eventable_id` they were stored with:
+
+```ruby
+customer.destroy
+
+event = RailsMicroEventSourcing::Event.find_by(eventable_type: "Customer", eventable_id: customer.id)
+event.eventable     # => nil — the record is gone
+event.aggregate_id  # => the id it had, so its history is still queryable
+```
+
+There is no foreign key on the events table, so nothing blocks the delete, and the
+insert-only grant [above](#what-the-guard-does-and-doesnt-cover) keeps working — the
+gem itself never issues an `UPDATE` or `DELETE` against the log.
 
 ## Concurrency
 

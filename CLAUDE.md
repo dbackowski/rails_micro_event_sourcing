@@ -107,6 +107,13 @@ so concurrent writers to one aggregate serialize.
   aggregate already has *any* event. Idempotent by design. The guard is on the base
   `Event` scope, not `self`: scoped per-type it let a second, differently-typed
   backfill insert another genesis snapshot sorting ahead of real history.
+- **The `events` association has no `dependent:` option, and must not get one.**
+  `dependent: :nullify` made every aggregate `destroy` run an `UPDATE` blanking
+  `eventable_id`/`eventable_type`: the gem rewrote its own append-only log, a deleted
+  record's history became unfindable by id, and under the README's `GRANT INSERT, SELECT`
+  the destroy of any `Eventable` model failed with `PG::InsufficientPrivilege`, events or
+  not. The rubocop disable on that line is deliberate. See
+  [aggregate_destroy_test.rb](test/models/aggregate_destroy_test.rb).
 - **`Event` inherits the engine's own `ApplicationRecord`**, not the host app's.
   `class Event < ApplicationRecord` resolves by lexical nesting, so deleting
   [app/models/rails_micro_event_sourcing/application_record.rb](app/models/rails_micro_event_sourcing/application_record.rb)
