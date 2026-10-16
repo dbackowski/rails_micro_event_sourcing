@@ -53,8 +53,12 @@ service objects.
 2. `validate :aggregate_must_be_valid` — build/load the aggregate, `apply` the payload,
    run its validations; failures are merged into `event.errors`.
 3. `before_create :capture_metadata` — copies `CurrentRequest.metadata` if unset.
-4. `before_create :apply_to_aggregate` — saves the aggregate with `validate: false`
-   (step 2 already validated this exact object), links `eventable`.
+4. `before_create :apply_to_aggregate` — raises if the payload or `aggregate_id` changed
+   since step 2, then saves the aggregate with `validate: false` (step 2 already
+   validated this exact object), links `eventable`.
+
+Before any of that, `save`/`save!` clear the memoized aggregate, so nothing built
+outside this save is reused.
 
 The event's own immutability is not a callback: `Event#readonly?` is `super ||
 persisted?`, so it is writable while being created and locked the instant it lands —
@@ -69,6 +73,20 @@ so concurrent writers to one aggregate serialize.
   must clear it on every validation pass, or a payload edited after a failed `save` or
   an explicit `valid?` never reaches the model. Covered by
   [event_revalidation_test.rb](test/models/event_revalidation_test.rb).
+- **It must also be cleared at the top of `save`/`save!`, which is why both are
+  overridden.** `save(validate: false)` runs no validation pass, so the callback above
+  never fires: an aggregate left by an earlier `valid?` or failed save was reused —
+  built from old inputs (edited payload in the log, old value on the row; a changed
+  `aggregate_id` wrote the *previous* record) and read under a lock since released
+  (a state-derived `apply` lost a concurrent update). No callback can do this; none
+  runs before validation on a save that skips it. See
+  [event_stale_aggregate_test.rb](test/models/event_stale_aggregate_test.rb).
+- **The payload and `aggregate_id` are frozen once validated.**
+  `ensure_aggregate_inputs_unchanged!` raises if a `before_save`/`before_create` on the
+  event edits them after the aggregate was built — otherwise the log stores the edited
+  value and the row the original. Don't "fix" it by rebuilding the aggregate there: the
+  rebuilt object would be saved without its own validations or `before_validation`
+  callbacks. Event-side normalization belongs in `before_validation`.
 - **The aggregate is validated exactly once per write.** `apply_to_aggregate` saves with
   `validate: false` because `aggregate_must_be_valid` already checked the same object.
   A plain `save!` re-runs every aggregate validation callback: query-backed validations

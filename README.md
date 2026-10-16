@@ -279,6 +279,19 @@ class CustomerCreated < RailsMicroEventSourcing::Event
 end
 ```
 
+Callbacks that *change the event's data* are a different matter. The aggregate is built
+and validated from the payload during validation, so the payload and `aggregate_id` are
+fixed from that point on. Normalize in `before_validation`:
+
+```ruby
+class CustomerCreated < RailsMicroEventSourcing::Event
+  before_validation { self.email = email&.strip&.downcase }
+end
+```
+
+Doing the same in `before_save` or `before_create` raises `ArgumentError` — the audit row
+would otherwise store the edited value while the model keeps the original.
+
 ### Metadata
 
 Each event has a `metadata` JSON column. Set `CurrentRequest.metadata` and any events

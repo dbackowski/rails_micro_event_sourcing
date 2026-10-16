@@ -81,6 +81,21 @@ module RailsMicroEventSourcing
       super || persisted?
     end
 
+    # The aggregate lives for one save and no longer. One left over from an
+    # earlier `valid?` or a failed save was built from the inputs of that
+    # moment and read under a lock since released; `save(validate: false)`
+    # never re-validates, so nothing else would clear it. Not a callback: none
+    # runs before validation on a save that skips validation.
+    def save(...) # rubocop:disable Rails/ActiveRecordOverride
+      reset_aggregate_record
+      super
+    end
+
+    def save!(...)
+      reset_aggregate_record
+      super
+    end
+
     def apply(aggregate)
       self.class.event_attribute_names.each do |key|
         next unless self[:payload]&.key?(key)
@@ -114,6 +129,7 @@ module RailsMicroEventSourcing
 
     def apply_to_aggregate
       ensure_aggregate_is_eventable!
+      ensure_aggregate_inputs_unchanged!
       aggregate_record.enable_write_access!
       # aggregate_must_be_valid already validated this exact object, in this
       # transaction, under this lock — validating again only re-runs the
@@ -132,12 +148,33 @@ module RailsMicroEventSourcing
             'add the include so the aggregate gets its `events` association and write guard.'
     end
 
+    # The aggregate was built and validated from the payload as it stood during
+    # validation. A before_save/before_create on the event that edits it
+    # afterwards would store one value in the log and another on the record.
+    # Rebuilding here instead would save an aggregate that never ran its own
+    # validations or before_validation callbacks, so fail and say where to move it.
+    def ensure_aggregate_inputs_unchanged!
+      return if @aggregate_record.nil? || @aggregate_inputs == aggregate_inputs
+
+      raise ArgumentError,
+            "#{self.class} changed its payload or aggregate_id after validation, so the " \
+            "#{aggregate_class} was validated with different values than the event stores — " \
+            'make the change in before_validation instead of before_save/before_create.'
+    end
+
     def reset_aggregate_record
       @aggregate_record = nil
     end
 
     def aggregate_record
-      @aggregate_record ||= find_or_build_aggregate.tap { |record| apply(record) }
+      @aggregate_record ||= begin
+        @aggregate_inputs = aggregate_inputs
+        find_or_build_aggregate.tap { |record| apply(record) }
+      end
+    end
+
+    def aggregate_inputs
+      [@aggregate_id, self[:payload].deep_dup]
     end
 
     # The lookup reads only aggregate_id, and apply_to_aggregate overwrites
