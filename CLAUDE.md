@@ -95,6 +95,22 @@ so concurrent writers to one aggregate serialize.
   check — `save!` raising inside `before_create` would make `event.save` raise rather
   than return `false` with `event.errors`. Covered in
   [event_test.rb](test/models/event_test.rb).
+- **Write access is closed in `ensure`, not on the line after the save.** If the
+  aggregate's `save!` raises, a trailing `disable_write_access!` never runs, and the
+  aggregate's `after_rollback` — which Rails runs on that same object, after the
+  transaction — could write to an `enforce_events_only!` model with no event. It closes
+  the local `opened`, not `@aggregate_record`: the memo exists from validation even when
+  an earlier check raised, and a non-`Eventable` aggregate has no
+  `disable_write_access!`, so the `ensure` would mask the real error. See
+  [aggregate_write_access_test.rb](test/models/aggregate_write_access_test.rb).
+- **Only a missing aggregate becomes the `aggregate_id` validation error.** The
+  `RecordNotFound` rescue in `aggregate_must_be_valid` also wraps `apply` and the
+  aggregate's validations, so it re-raises unless `aggregate_id` is present and
+  `exists?` is false. Without that, any failed lookup in there — a seed row, a related
+  record — returned `false` with "does not reference an existing record", on a valid id
+  or on a create event with none, and the bug never reached an error tracker. Don't
+  narrow it by `e.model`: a lookup of another record of the aggregate's own class
+  passes that check. See [aggregate_not_found_test.rb](test/models/aggregate_not_found_test.rb).
 - **`event_attributes` defines methods on the event class**, so a declared name matching
   a real column (`metadata`, `payload`, `type`, `created_at`) shadows that column's
   accessor. Internals must use `self[:payload]` / `read_attribute` — never the public

@@ -121,22 +121,31 @@ module RailsMicroEventSourcing
       self[:metadata] ||= CurrentRequest.metadata.presence
     end
 
+    # Only a missing aggregate is a validation error. The rescue also covers
+    # `apply` and the aggregate's own validations, whose failed lookups are
+    # bugs: re-raised with their own message, not blamed on aggregate_id.
     def aggregate_must_be_valid
       errors.merge!(aggregate_record.errors) unless aggregate_record.valid?
     rescue ActiveRecord::RecordNotFound
+      raise if @aggregate_id.blank? || aggregate_class.exists?(@aggregate_id)
+
       errors.add(:aggregate_id, 'does not reference an existing record')
     end
 
     def apply_to_aggregate
       ensure_aggregate_is_eventable!
       ensure_aggregate_inputs_unchanged!
-      aggregate_record.enable_write_access!
+      opened = aggregate_record.tap(&:enable_write_access!)
       # aggregate_must_be_valid already validated this exact object, in this
       # transaction, under this lock — validating again only re-runs the
       # aggregate's validation callbacks, which need not be idempotent.
-      aggregate_record.save!(validate: false)
-      aggregate_record.disable_write_access!
-      self.eventable = aggregate_record
+      opened.save!(validate: false)
+      self.eventable = opened
+    ensure
+      # Closed even when the save raises: the aggregate's after_rollback still
+      # runs on this object, after the transaction, and must not write past the
+      # guard. Only what was opened — after an earlier raise `opened` is nil.
+      opened&.disable_write_access!
     end
 
     def ensure_aggregate_is_eventable!
