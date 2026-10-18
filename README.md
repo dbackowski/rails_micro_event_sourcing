@@ -372,8 +372,7 @@ current state, stamped with the row's original `created_at`.
 
 `backfill!` does exactly that. Unlike a normal event, it does **not** replay onto the
 aggregate (the row already holds the correct state), so your records are left
-untouched — no `updated_at` bump, no validations, no lock. It only appends the audit
-row:
+untouched — no `updated_at` bump, no validations. It only appends the audit row:
 
 ```ruby
 Customer.find_each do |customer|
@@ -385,13 +384,16 @@ Each backfilled event:
 
 - **stores a full snapshot** of the row in `payload` (every column, including
   `created_at`/`updated_at`), not just the declared `event_attributes` — so the last
-  point in history you can honestly capture is preserved.
+  point in history you can honestly capture is preserved. The snapshot is read from the
+  database, not from the object you pass, so unsaved changes on it are not captured.
 - **backdates the event's `created_at`** to the record's original creation time, so
   `customer.events` orders it ahead of any real events created after adoption.
 - is **idempotent**: it returns `nil` and writes nothing if the aggregate already has
   *any* event — a previous backfill, a real creation event, anything. The point is to
   seed a genesis row for a blank history, so a non-blank one is left alone. Re-run the
-  task as many times as you like.
+  task as many times as you like, including two runs at once: each backfill takes the
+  same row lock an event takes, so overlapping runs go in turn and the second one finds
+  the first one's row.
 
 Because it's a reconstruction, tag it (`metadata: { backfilled: true }`) so synthetic
 genesis events stay distinguishable from ones your app actually emitted. You have to
@@ -409,9 +411,17 @@ Customer::Events::CustomerCreated.backfill!(
 )
 ```
 
-`backfill!` raises `ArgumentError` on an event class with no `aggregate_class`
-(aggregate-less events record facts, not records, so there's nothing to seed), and on
-an aggregate that isn't persisted yet (it has no id to attach the audit row to).
+`backfill!` raises `ArgumentError`, writing nothing, when:
+
+- the event class has no `aggregate_class` (aggregate-less events record facts, not
+  records, so there's nothing to seed);
+- the record isn't an instance of the event's `aggregate_class` — a genesis row can't
+  be taken back, and a wrong one would block the right backfill for good;
+- the `aggregate_class` doesn't include `RailsMicroEventSourcing::Eventable`;
+- the record isn't persisted yet (it has no id to attach the audit row to).
+
+Records hidden by a `default_scope` (discard, acts_as_paranoid) can be backfilled: pass
+them in, e.g. from `Customer.unscoped.find_each`.
 
 ## Removing the gem
 

@@ -33,10 +33,34 @@ module RailsMicroEventSourcing
       end
 
       def backfill!(aggregate, payload: nil, created_at: nil, metadata: nil)
-        raise ArgumentError, "#{name} has no aggregate_class" unless aggregate_class
-        raise ArgumentError, "#{aggregate.class} must be persisted to be backfilled" unless aggregate.persisted?
-        return nil if Event.exists?(eventable: aggregate)
+        ensure_backfillable!(aggregate)
 
+        # The row lock an event takes, so overlapping backfills — and events —
+        # go in turn and the second sees the first's row. The snapshot is read
+        # under it from the database, not from the caller's object; unscoped,
+        # so a default_scope does not hide the record being backfilled.
+        transaction do
+          current = aggregate.class.unscoped.lock.find(aggregate.id)
+          next nil if Event.exists?(eventable: current)
+
+          insert_genesis(current, payload:, created_at:, metadata:)
+        end
+      end
+
+      private
+
+      def ensure_backfillable!(aggregate)
+        raise ArgumentError, "#{name} has no aggregate_class" unless aggregate_class
+        unless aggregate.is_a?(aggregate_class)
+          raise ArgumentError, "#{name} backfills #{aggregate_class}, not #{aggregate.class}"
+        end
+        unless aggregate_class.include?(Eventable)
+          raise ArgumentError, "#{aggregate_class} does not include RailsMicroEventSourcing::Eventable"
+        end
+        raise ArgumentError, "#{aggregate.class} must be persisted to be backfilled" unless aggregate.persisted?
+      end
+
+      def insert_genesis(aggregate, payload:, created_at:, metadata:)
         insert!( # rubocop:disable Rails/SkipsModelValidations
           {
             type: name,
@@ -49,8 +73,6 @@ module RailsMicroEventSourcing
           returning: false
         )
       end
-
-      private
 
       def own_event_attribute_names
         @own_event_attribute_names ||= []

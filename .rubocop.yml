@@ -25,7 +25,7 @@ Metrics/MethodLength:
 # Event is deliberately the centre of gravity of this gem — "the event is the
 # model" — so it carries the whole write path rather than spreading it thin.
 Metrics/ClassLength:
-  Max: 140
+  Max: 160
 
 Metrics/BlockLength:
   Exclude:

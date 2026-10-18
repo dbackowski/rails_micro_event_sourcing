@@ -140,7 +140,13 @@ so concurrent writers to one aggregate serialize.
   row (full-attribute snapshot, `created_at` from the record), and returns `nil` if the
   aggregate already has *any* event. Idempotent by design. The guard is on the base
   `Event` scope, not `self`: scoped per-type it let a second, differently-typed
-  backfill insert another genesis snapshot sorting ahead of real history.
+  backfill insert another genesis snapshot sorting ahead of real history. The guard
+  runs under `aggregate.class.unscoped.lock.find` inside a transaction — without the row
+  lock, two overlapping runs both passed the check and both inserted — and the snapshot
+  comes from that locked row, not the caller's object, which may hold unsaved edits.
+  `ensure_backfillable!` rejects a record of another class and a non-`Eventable` class:
+  a genesis row can't be removed under an insert-only grant, and a wrong one makes the
+  right backfill skip forever. See [backfill_guard_test.rb](test/models/backfill_guard_test.rb).
 - **The `events` association has no `dependent:` option, and must not get one.**
   `dependent: :nullify` made every aggregate `destroy` run an `UPDATE` blanking
   `eventable_id`/`eventable_type`: the gem rewrote its own append-only log, a deleted
