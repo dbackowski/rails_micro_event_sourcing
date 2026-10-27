@@ -100,21 +100,33 @@ end
 
 #### What the guard does and doesn't cover
 
-`enforce_events_only!` works through `readonly?`, which Rails consults when saving or
-destroying a *record*. So the line is instantiated vs. not:
+`enforce_events_only!` guards against accidental writes through ordinary ActiveRecord
+calls. It is not a security boundary. It works through `readonly?`, so it stops the
+basic record operations:
 
-| Raises `ReadOnlyRecord` | Goes through untouched |
-|---|---|
-| `create` / `create!` | `Customer.where(…).update_all` |
-| `update` / `update!` | `Customer.insert_all` / `upsert_all` |
-| `update_attribute` / `update_columns` | `Customer.where(…).delete_all` |
-| `touch` | `customer.delete` |
-| `destroy` / `destroy!` / `destroy_all` | raw SQL |
+- `create` / `create!` / `save` / `update` / `update!`
+- `update_attribute` / `update_column` / `update_columns` / `toggle!` / `touch`
+- `destroy` / `destroy!` / `destroy_all` / `destroy_by`
 
-Every path ordinary app code takes by accident is stopped. Relation-level SQL never
-builds a record, so `readonly?` is never consulted — a data migration doing
-`Customer.where(…).update_all(…)` rewrites state with no event and no error. Treat this
-as a guard against accidental writes, not as a security boundary.
+Anything that doesn't consult `readonly?` is not covered:
+
+- relation-level SQL (`update_all`, `insert_all`, `upsert_all`, `delete_all`,
+  `delete_by`, `touch_all`) — a data migration doing `Customer.where(…).update_all(…)`
+  rewrites state with no event and no error
+- counter updates (`increment!`, `decrement!`, `update_counters`, counter caches)
+- `customer.delete`
+- another model class mapped to the same table
+- raw SQL
+
+`enable_write_access!` lifts the guard on one record, for data repairs. Writes through
+it leave no event.
+
+One ordinary pattern stops working: a child with `belongs_to :customer, touch: true`.
+Rails touches the parent when the child's transaction commits, the touch is refused, and
+the child is not saved. Remove `touch: true` from associations that point at an
+enforced model.
+
+To remove an enforced record, see [Deleting an aggregate](#deleting-an-aggregate).
 
 The gem doesn't try to close the rest, and deliberately so: chasing every way Ruby can
 reach a table means fighting ActiveRecord, and it still wouldn't stop a `psql` session.
@@ -454,7 +466,7 @@ you (a scope such as `where(deleted_at: nil)`).
 
 On an `enforce_events_only!` model this is the *only* route: `destroy` raises
 `ActiveRecord::ReadOnlyRecord` like any other direct write. `customer.delete` still
-goes through, as the [guard table](#what-the-guard-does-and-doesnt-cover) shows, but
+goes through, as [the guard section](#what-the-guard-does-and-doesnt-cover) says, but
 it leaves no event behind.
 
 ### Hard deletes
