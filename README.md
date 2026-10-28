@@ -375,6 +375,46 @@ add_index :rails_micro_event_sourcing_events, :payload, using: :gin
 add_index :rails_micro_event_sourcing_events, :created_at
 ```
 
+### Renaming or removing an event class
+
+Each event row stores its full class name in `type`, and loading the row turns that name
+back into the class. Rename an event class, move it to another namespace, or delete it,
+and every row already written under the old name raises
+`ActiveRecord::SubclassNotFound` when loaded. One such row is enough to break
+`customer.events` for that record's whole history. Writes keep working, so it usually
+surfaces later, on an audit page.
+
+The rows can't be fixed in place: the log is append-only, and under the
+[insert-only grant](#what-the-guard-does-and-doesnt-cover) an `UPDATE` of `type` is
+refused. Keep the old name loadable instead.
+
+To rename, keep the old name as an empty subclass of the new one. It inherits
+`aggregate_class` and `event_attributes`, so old rows load with their readers intact:
+
+```ruby
+class Customer
+  module Events
+    class CustomerRegistered < RailsMicroEventSourcing::Event
+      aggregate_class Customer
+      event_attributes :first_name, :last_name, :email
+    end
+
+    # Rows written before the rename. Do not delete.
+    class CustomerSignedUp < CustomerRegistered; end
+  end
+end
+```
+
+Put each class in its own file as usual (`customer_signed_up.rb` here), so autoloading
+finds it.
+
+To retire an event type, stop emitting it but keep its class.
+
+With lazy loading (development, and tests without eager loading), Rails only knows the
+subclasses it has already loaded. Until the old class is loaded,
+`CustomerRegistered.where(…)` leaves out the rows stored under the old name;
+`customer.events` is unaffected, because it doesn't filter by type.
+
 ## Backfilling existing records
 
 When you adopt the gem on a table that already has rows, those records have no
@@ -439,7 +479,9 @@ them in, e.g. from `Customer.unscoped.find_each`.
 
 Because state lives in your own columns, removal is clean: drop the `include`, delete
 your event classes, and drop the events table. Your model keeps working as plain
-ActiveRecord.
+ActiveRecord. Delete the classes only together with the table: while the log is kept,
+every class that has rows in it must stay (see
+[Renaming or removing an event class](#renaming-or-removing-an-event-class)).
 
 ## Deleting an aggregate
 
