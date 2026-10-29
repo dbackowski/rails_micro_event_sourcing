@@ -158,25 +158,48 @@ class Customer
 end
 ```
 
-Every `event_attributes` value is copied onto the aggregate, so each name **must**
-match a setter on the aggregate. If it doesn't, applying the event raises
+By default every `event_attributes` value is copied onto the aggregate, so each name
+**must** match a setter on the aggregate. If it doesn't, applying the event raises
 `ArgumentError` (naming the offending attribute) instead of silently dropping the
 value — a mistyped or renamed attribute fails loudly rather than writing a blank column.
 
-Override `apply(aggregate)` when you need to normalize or derive a value. Call `super`
-to copy the rest:
+Override `apply(aggregate)` when a straight copy isn't the whole change. To derive a
+value the payload doesn't carry, call `super` to copy the payload, then set the rest:
 
 ```ruby
 event_attributes :first_name, :last_name, :email
 
 def apply(aggregate)
   super
-  aggregate.email = aggregate.email.strip.downcase
+  aggregate.email_domain = email.split("@").last # given an email_domain column
 end
 ```
 
-(Data that isn't part of the aggregate — request context, an audit flag — belongs in
-[`metadata`](#metadata), not in `event_attributes`.)
+When an attribute isn't a column at all — an amount to add, say — skip `super` and apply
+it yourself:
+
+```ruby
+class AccountCredited < RailsMicroEventSourcing::Event
+  aggregate_class Account
+  event_attributes :amount
+  validates :amount, numericality: { greater_than: 0 }
+
+  def apply(account)
+    account.balance += amount # no super: Account has no amount= setter
+  end
+end
+```
+
+Skipping `super` also skips the setter check, so the override has to handle every
+attribute itself.
+
+Don't normalize in `apply`. It never writes back to the payload, so the audit row would
+keep the raw value while the model gets the cleaned one, and searching the log by the
+value the model holds finds nothing. Normalize in `before_validation` instead (see
+[Side effects](#side-effects)).
+
+(Data that is neither applied nor needed to compute the change — request context, an
+audit flag — belongs in [`metadata`](#metadata), not in `event_attributes`.)
 
 ### 3. Create it
 
