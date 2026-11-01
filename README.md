@@ -398,6 +398,35 @@ add_index :rails_micro_event_sourcing_events, :payload, using: :gin
 add_index :rails_micro_event_sourcing_events, :created_at
 ```
 
+### Sensitive data in the log
+
+The payload holds the same values as your model, in plaintext: whatever an event
+carries, and for a [backfill](#backfilling-existing-records) every column — password
+digests, tokens, and the *decrypted* values of `encrypts` columns. Encrypting a model
+column does not encrypt its copies in the log.
+
+Treat the events table as at least as sensitive as your most sensitive model, and keep
+in mind it is harder to clean: the log is append-only, and under the
+[insert-only grant](#what-the-guard-does-and-doesnt-cover) its rows can't be deleted, so
+a request to erase personal data can't be met for values already in payloads. Keep out
+of `event_attributes` anything you may have to erase.
+
+Rails' `filter_attributes` (fed by `filter_parameters`) filters by column name, so
+`:ssn` in the list hides it in `person.inspect` but not inside `event.inspect`, where it
+sits in the `payload` column. To keep payloads out of logs and error reports, filter
+that column on the event class:
+
+```ruby
+# config/initializers/rails_micro_event_sourcing.rb
+Rails.application.config.to_prepare do
+  RailsMicroEventSourcing::Event.filter_attributes += [:payload]
+end
+```
+
+`event.payload` still returns the data; only `inspect` hides it. Don't add `:payload` to
+`filter_parameters` instead: that also filters any request parameter whose name
+contains "payload".
+
 ### Renaming or removing an event class
 
 Each event row stores its full class name in `type`, and loading the row turns that name
@@ -461,6 +490,9 @@ Each backfilled event:
   `created_at`/`updated_at`), not just the declared `event_attributes` — so the last
   point in history you can honestly capture is preserved. The snapshot is read from the
   database, not from the object you pass, so unsaved changes on it are not captured.
+  Secret and encrypted columns are included in plaintext (see
+  [Sensitive data in the log](#sensitive-data-in-the-log)); pass `payload:` to choose
+  the columns yourself.
 - **backdates the event's `created_at`** to the record's original creation time, so
   `customer.events` orders it ahead of any real events created after adoption.
 - is **idempotent**: it returns `nil` and writes nothing if the aggregate already has
