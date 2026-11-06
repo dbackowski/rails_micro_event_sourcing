@@ -248,12 +248,20 @@ class Customer
     class CustomerUpdated < RailsMicroEventSourcing::Event
       aggregate_class Customer
       event_attributes :first_name, :last_name, :email
+      validates :aggregate_id, presence: true
     end
   end
 end
 
 Customer::Events::CustomerUpdated.create!(aggregate_id: customer.id, email: "new@example.com")
 ```
+
+Declare that `validates :aggregate_id, presence: true` on every update event. Whether an
+event creates or updates is decided by `aggregate_id` alone: blank means "build a new
+record". Without the validation, `CustomerUpdated.create(aggregate_id: params[:id], …)`
+with a missing id creates a new `Customer` instead of updating one — silently with a full
+payload, or with a `NOT NULL` error from the database with a partial one. With it, `save`
+returns `false` and nothing is written.
 
 `aggregate_id` is virtual sugar — it is not a column. As input it names the record to
 load; as output `event.aggregate_id` mirrors the linked id.
@@ -550,6 +558,7 @@ class Customer
     class CustomerDeleted < RailsMicroEventSourcing::Event
       aggregate_class Customer
       event_attributes :deleted_at
+      validates :aggregate_id, presence: true
     end
   end
 end

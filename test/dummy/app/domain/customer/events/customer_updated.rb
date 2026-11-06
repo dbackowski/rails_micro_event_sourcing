@@ -5,6 +5,9 @@ class Customer
     class CustomerUpdated < RailsMicroEventSourcing::Event
       aggregate_class Customer
       event_attributes :first_name, :last_name, :email
+
+      # A blank aggregate_id means "build a new record"; an update must not do that.
+      validates :aggregate_id, presence: true
     end
   end
 end
