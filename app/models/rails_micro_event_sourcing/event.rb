@@ -68,7 +68,7 @@ module RailsMicroEventSourcing
             eventable_id: aggregate.id,
             payload: payload || aggregate.attributes,
             metadata: metadata,
-            created_at: created_at || aggregate.created_at || Time.current
+            created_at: created_at || aggregate[:created_at] || Time.current
           },
           returning: false
         )
