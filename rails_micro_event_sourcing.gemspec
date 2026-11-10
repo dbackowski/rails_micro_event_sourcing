@@ -14,7 +14,7 @@ Gem::Specification.new do |spec|
                      'applies its change to the related aggregate. No commands, ' \
                      'no handlers, no bus.'
   spec.license               = 'MIT'
-  spec.required_ruby_version = '>= 3.2'
+  spec.required_ruby_version = '>= 3.3'
 
   spec.metadata['homepage_uri'] = spec.homepage
   spec.metadata['source_code_uri'] = 'https://github.com/dbackowski/rails_micro_event_sourcing'
@@ -25,5 +25,5 @@ Gem::Specification.new do |spec|
   end
 
   spec.add_dependency 'pg', '~> 1.1'
-  spec.add_dependency 'rails', '>= 7.1'
+  spec.add_dependency 'rails', '>= 8.1'
 end

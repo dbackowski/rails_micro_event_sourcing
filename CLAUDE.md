@@ -164,7 +164,7 @@ so concurrent writers to one aggregate serialize.
 
 ## Conventions
 
-- Ruby >= 3.2, Rails >= 7.1, PostgreSQL only (`jsonb` payload/metadata).
+- Ruby >= 3.3, Rails >= 8.1, PostgreSQL only (`jsonb` payload/metadata).
 - `# frozen_string_literal: true` on every gem file; rubocop excludes `test/dummy`,
   `bin`, and `db/migrate`.
 - Tests are Minitest under `test/models/`, one file per behaviour area, each with a

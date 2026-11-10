@@ -22,21 +22,26 @@ This gem is the deliberately stripped-down version.
 
 Creating an event is the whole write path. Validation, the change to your model, and
 the audit row all happen in one transaction — if the event is invalid, nothing is
-touched.
+written.
+
+The model is loaded and changed *during* validation, under a row lock, so the model's
+own validations run on the changed record and their failures land in `event.errors`
+next to the event's.
 
 ```mermaid
 flowchart TD
-    A["CustomerCreated.create(first_name: ...)"] --> B{"Event valid?"}
-    B -- "no" --> C["Nothing written<br/>event.errors is set"]
-    B -- "yes" --> D["Load the model<br/>(find existing or build new)"]
+    A["CustomerCreated.create(first_name: ...)"]
 
     subgraph TX["one transaction"]
         direction TB
-        D --> E["apply payload onto the model"]
-        E --> F["save the model row<br/>(= current state)"]
+        D["Load the model, locked<br/>(find existing or build new)"] --> E["apply payload onto the model"]
+        E --> B{"Event and model valid?"}
+        B -- "yes" --> F["save the model row<br/>(= current state)"]
         F --> G["insert the event row<br/>(immutable audit log)"]
     end
 
+    A --> D
+    B -- "no" --> C["Rolled back, nothing written<br/>event.errors is set"]
     G --> H["event.aggregate → the persisted model"]
 ```
 
@@ -58,8 +63,8 @@ changed. Events are never replayed.
 
 ## Requirements
 
-- Ruby >= 3.2
-- Rails >= 7.1
+- Ruby >= 3.3
+- Rails >= 8.1
 - PostgreSQL (uses `jsonb` for payload/metadata)
 
 ## Installation
@@ -340,6 +345,8 @@ would otherwise store the edited value while the model keeps the original.
 Each event has a `metadata` JSON column. Set `CurrentRequest.metadata` and any events
 created during that unit of work pick it up. `CurrentRequest` is backed by
 `ActiveSupport::CurrentAttributes`, so it resets automatically between requests/jobs.
+That also means a job does not inherit it from the request that enqueued it — set it in
+the job (e.g. in an `around_perform`) if you want job events stamped.
 
 ```ruby
 class ApplicationController < ActionController::Base
@@ -363,8 +370,9 @@ Customer::Events::CustomerCreated.create!(
 )                                       # => { "reason" => "csv import" }
 
 Customer::Events::CustomerCreated.create!(
-  **attrs, metadata: RailsMicroEventSourcing::CurrentRequest.metadata.merge(reason: "csv import")
+  **attrs, metadata: RailsMicroEventSourcing::CurrentRequest.metadata.to_h.merge(reason: "csv import")
 )                                       # => { "request_id" => "…", "reason" => "csv import" }
+                                        # (.to_h: metadata is nil outside a request)
 ```
 
 `nil` is not the same as `{}` here. Passing `nil` (or nothing) falls back to
@@ -508,7 +516,9 @@ Each backfilled event:
   seed a genesis row for a blank history, so a non-blank one is left alone. Re-run the
   task as many times as you like, including two runs at once: each backfill takes the
   same row lock an event takes, so overlapping runs go in turn and the second one finds
-  the first one's row.
+  the first one's row. When it does write, the return value is truthy but not the
+  event (the row is inserted directly), so `if backfill!(…)` works and nothing more —
+  read the row back through `customer.events` if you need it.
 
 Because it's a reconstruction, tag it (`metadata: { backfilled: true }`) so synthetic
 genesis events stay distinguishable from ones your app actually emitted. You have to
